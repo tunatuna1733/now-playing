@@ -1,19 +1,17 @@
 use serde::Serialize;
-use tauri::{async_runtime::Mutex, AppHandle, Emitter, Manager};
-use winrt::media::MediaClient;
+use tauri::{async_runtime::Mutex, AppHandle, Emitter, Manager, State};
+use winrt::{error::WinRTError, media::MediaClient, model::CurrentSession};
 
 pub mod winrt;
 
-/*
 #[tauri::command]
 async fn get_current_sessions(
     media_client: State<'_, Mutex<MediaClient>>,
-) -> Result<Vec<NowPlaying>, WinRTError> {
+) -> Result<Vec<CurrentSession>, WinRTError> {
     let client = media_client.lock().await;
     let sessions = client.get_current_sessions().unwrap();
     Ok(sessions)
 }
-    */
 
 pub fn emit_event<S: Serialize + Clone>(event_name: &str, payload: S, handle: &AppHandle) {
     handle.emit(event_name, payload).unwrap();
@@ -23,7 +21,7 @@ pub fn emit_event<S: Serialize + Clone>(event_name: &str, payload: S, handle: &A
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![get_current_sessions])
         .setup(|app| {
             let app_handle = app.handle();
             let media_client = MediaClient::new().unwrap();

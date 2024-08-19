@@ -4453,6 +4453,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d1c4c26096081a37ac9fd78fee14c85781933cb65c28fa7200dc486a3b7a7a5"
 dependencies = [
+ "serde",
  "tap",
  "tokio",
  "tracing",

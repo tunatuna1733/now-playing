@@ -2,24 +2,80 @@ import { useEffect, useState } from 'react';
 import reactLogo from './assets/react.svg';
 import { invoke } from '@tauri-apps/api/core';
 import './App.css';
-import { NowPlaying } from './types/winrt';
+import { ActiveSessionChange, Session, SessionCreate, SessionRemove, SessionUpdate } from './types/winrt';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { debugPrint } from './utils/debug';
 
 function App() {
-  const [sessions, setSessions] = useState<NowPlaying[]>();
+  const [sessions, setSessions] = useState<Session[]>([]);
 
   const getCurrentSessions = async () => {
     setSessions(await invoke('get_current_sessions'));
   };
 
   useEffect(() => {
+    invoke<Session[]>('get_current_sessions').then((s) => {
+      setSessions(s);
+    });
     const unlistenFuncs: UnlistenFn[] = [];
     const initListeners = async () => {
       const unlistenTestListener = await listen('test-event', (e) => {
         console.log(e.payload);
       });
       unlistenFuncs.push(unlistenTestListener);
+
+      const unlistenSessionCreateListener = await listen<SessionCreate>('session_create', (e) => {
+        debugPrint('Session Create: ', e.payload);
+        setSessions((prev) => {
+          return [...prev, { sessionId: e.payload.sessionId, source: e.payload.source }];
+        });
+      });
+      unlistenFuncs.push(unlistenSessionCreateListener);
+
+      const unlistenSessionUpdateListener = await listen<SessionUpdate>('session_update', (e) => {
+        debugPrint('Session Update', e.payload);
+        setSessions((prev) => {
+          const exist = prev.find((s) => s.source === e.payload.source);
+          const filtered = prev.filter((s) => s.source !== e.payload.source);
+          if (exist === undefined) {
+            return prev;
+          } else {
+            // update info
+            if (e.payload.image) exist.image = e.payload.image;
+            exist.session = e.payload.sessionModel;
+            exist.sessionId = e.payload.sessionId;
+            const newSessions = [...filtered, exist].sort((a, b) => {
+              if (a.source > b.source) return 1;
+              else return -1;
+            });
+            return newSessions;
+          }
+        });
+      });
+      unlistenFuncs.push(unlistenSessionUpdateListener);
+
+      const unlistenSessionRemoveListener = await listen<SessionRemove>('session_remove', (e) => {
+        debugPrint('Session Remove: ', e.payload);
+        setSessions((prev) => {
+          return prev.filter((s) => s.sessionId !== e.payload.sessionId);
+        });
+      });
+      unlistenFuncs.push(unlistenSessionRemoveListener);
+
+      const unlistenCurrentSessionChangeListener = await listen<ActiveSessionChange>('current_session_change', (e) => {
+        debugPrint('Current Session Change', e.payload);
+        // todo
+      });
+      unlistenFuncs.push(unlistenCurrentSessionChangeListener);
+
+      const unlistenCurrentSessionRemoveListener = await listen('current_session_remove', () => {
+        debugPrint('Current Session Remove');
+        // currently no sessions
+        setSessions([]);
+      });
+      unlistenFuncs.push(unlistenCurrentSessionRemoveListener);
     };
+
     initListeners();
     return () => {
       unlistenFuncs.forEach((f) => {
@@ -27,6 +83,10 @@ function App() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    console.log(sessions);
+  }, [sessions]);
 
   return (
     <div className="container">
@@ -56,13 +116,14 @@ function App() {
         <button type="submit">Greet</button>
       </form>
       <div>
-        {sessions?.map((s, i) => (
+        {sessions.map((s, i) => (
           <div key={i}>
-            <p>Title: {s.title}</p>
-            <p>Album: {s.album}</p>
-            <p>Artist: {s.artist}</p>
-            <p>Guid: {s.guid}</p>
-            <img src={URL.createObjectURL(new Blob([new Uint8Array(s.thumbnail)], { type: 'image/png' }))} />
+            <p>
+              {s.source} : {s.sessionId}
+            </p>
+            <p> {s.session?.media?.title}</p>
+            <p> {s.session?.media?.artist}</p>
+            <img src={URL.createObjectURL(new Blob([new Uint8Array(s.image || [])], { type: 'image/png' }))} />
           </div>
         ))}
       </div>

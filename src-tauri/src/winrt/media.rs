@@ -1,10 +1,20 @@
-use gsmtc::{ManagerEvent::*, SessionUpdateEvent::*};
+use gsmtc::{ManagerEvent::*, SessionModel, SessionUpdateEvent::*};
 use tauri::AppHandle;
-use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager;
+use windows::{
+    Media::Control::GlobalSystemMediaTransportControlsSessionManager,
+    Storage::Streams::{DataReader, IRandomAccessStreamWithContentType},
+};
 
-use crate::emit_event;
+use crate::{emit_event, winrt::model::SessionUpdate};
 
-use super::{error::WinRTError, model::NowPlaying};
+use super::{
+    convert::{convert_media_info, convert_playback_info, convert_timeline_info},
+    error::WinRTError,
+    model::{
+        ActiveSessionChange, ActiveSessionRemove, CurrentSession, NowPlaying, SessionCreate,
+        SessionRemove,
+    },
+};
 
 pub struct MediaClient {
     pub session_manager: GlobalSystemMediaTransportControlsSessionManager,
@@ -77,40 +87,90 @@ impl MediaClient {
                     mut rx,
                     source,
                 } => {
-                    println!("Created session: {{id={session_id}, source={source}}}");
                     let app_handle = handle.clone();
+                    emit_event(
+                        "session_create",
+                        SessionCreate {
+                            session_id: session_id.clone(),
+                            source: source.clone(),
+                        },
+                        &app_handle,
+                    );
                     tauri::async_runtime::spawn(async move {
                         while let Some(evt) = rx.recv().await {
                             match evt {
                                 Model(model) => {
-                                    println!("[{session_id}/{source}] Model updated: {model:#?}");
-                                    emit_event("test-event", model.source, &app_handle);
+                                    emit_event(
+                                        "session_update",
+                                        SessionUpdate {
+                                            session_id,
+                                            source: source.clone(),
+                                            session_model: model,
+                                            image: None,
+                                        },
+                                        &app_handle,
+                                    );
                                 }
-                                Media(model, image) => println!(
-                                    "[{session_id}/{source}] Media updated: {model:#?} - {image:?}"
-                                ),
+                                Media(model, image) => {
+                                    if let Some(img) = image {
+                                        emit_event(
+                                            "session_update",
+                                            SessionUpdate {
+                                                session_id,
+                                                source: source.clone(),
+                                                session_model: model,
+                                                image: Some(img.data),
+                                            },
+                                            &app_handle,
+                                        );
+                                    } else {
+                                        emit_event(
+                                            "session_update",
+                                            SessionUpdate {
+                                                session_id,
+                                                source: source.clone(),
+                                                session_model: model,
+                                                image: None,
+                                            },
+                                            &app_handle,
+                                        );
+                                    }
+                                }
                             }
                         }
                         println!("[{session_id}/{source}] exited event-loop");
                     });
                 }
                 SessionRemoved { session_id } => {
-                    println!("Session {{id={session_id}}} was removed")
+                    emit_event(
+                        "session_remove",
+                        SessionRemove {
+                            session_id: session_id.clone(),
+                        },
+                        handle,
+                    );
                 }
                 CurrentSessionChanged {
                     session_id: Some(id),
-                } => println!("Current session: {id}"),
+                } => {
+                    emit_event(
+                        "current_session_change",
+                        ActiveSessionChange {
+                            session_id: id.clone(),
+                        },
+                        handle,
+                    );
+                }
                 CurrentSessionChanged { session_id: None } => {
-                    println!("No more current session")
+                    emit_event("current_session_remove", ActiveSessionRemove, handle);
                 }
             }
         }
         Ok(())
     }
 
-    /*
     // I think we should not use this function except launch timing
-    pub fn get_current_sessions(&self) -> Result<Vec<NowPlaying>, WinRTError> {
+    pub fn get_current_sessions(&self) -> Result<Vec<CurrentSession>, WinRTError> {
         let sessions = match self.session_manager.GetSessions() {
             Ok(s) => s,
             Err(_) => {
@@ -119,7 +179,8 @@ impl MediaClient {
                 });
             }
         };
-        let mut current_sessions = Vec::<NowPlaying>::new();
+        let mut current_sessions = Vec::<CurrentSession>::new();
+        let mut id = 0;
         for session in sessions {
             let info = match session.TryGetMediaPropertiesAsync() {
                 Ok(a) => match a.get() {
@@ -154,15 +215,60 @@ impl MediaClient {
                     None
                 }
             };
-            let guid = session.SourceAppUserModelId().unwrap(); // execution file name (e.g. Spotify.exe)
-            let data = NowPlaying {
-                title: info.Title().unwrap().to_string(),
-                artist: info.Artist().unwrap().to_string(),
-                album: info.AlbumTitle().unwrap().to_string(),
-                thumbnail,
-                guid: guid.to_string(),
+            let source = session.SourceAppUserModelId().unwrap(); // execution file name (e.g. Spotify.exe)
+
+            // playback
+            let playback_info = match session.GetPlaybackInfo() {
+                Ok(p) => p,
+                Err(_) => {
+                    return Err(WinRTError {
+                        message: "Failed to get playback info.".to_string(),
+                    });
+                }
+            };
+            let playback = match convert_playback_info(&playback_info) {
+                Ok(p) => Some(p),
+                Err(err) => {
+                    println!("{}", err.message);
+                    None
+                }
+            };
+
+            // timeline
+            let timeline_info = match session.GetTimelineProperties() {
+                Ok(t) => t,
+                Err(_) => {
+                    return Err(WinRTError {
+                        message: "Failed to get timeline info.".to_string(),
+                    });
+                }
+            };
+            let timeline = match convert_timeline_info(&timeline_info) {
+                Ok(t) => Some(t),
+                Err(_) => None,
+            };
+
+            // media
+            let media = match convert_media_info(&info) {
+                Ok(m) => Some(m),
+                Err(_) => None,
+            };
+
+            let session = SessionModel {
+                playback,
+                timeline,
+                media,
+                source: source.clone().to_string(),
+            };
+
+            let data = CurrentSession {
+                source: source.to_string(),
+                session,
+                image: thumbnail,
+                session_id: id.clone(),
             };
             current_sessions.push(data);
+            id += 1;
         }
         Ok(current_sessions)
     }
@@ -182,6 +288,7 @@ impl MediaClient {
         Ok(data)
     }
 
+    /*
     pub fn update_session(mut self, session: NowPlaying) -> Result<(), WinRTError> {
         // this function updates the current state of one of the current_sessions
         // should be called in each session's event handler

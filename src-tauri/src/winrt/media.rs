@@ -1,7 +1,9 @@
 use gsmtc::{ManagerEvent::*, SessionModel, SessionUpdateEvent::*};
 use tauri::AppHandle;
 use windows::{
-    Media::Control::GlobalSystemMediaTransportControlsSessionManager,
+    Media::Control::{
+        GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
+    },
     Storage::Streams::{DataReader, IRandomAccessStreamWithContentType},
 };
 
@@ -11,8 +13,8 @@ use super::{
     convert::{convert_media_info, convert_playback_info, convert_timeline_info},
     error::WinRTError,
     model::{
-        ActiveSessionChange, ActiveSessionRemove, CurrentSession, NowPlaying, SessionCreate,
-        SessionRemove,
+        ActiveSessionChange, ActiveSessionRemove, CurrentSession, NowPlaying, SessionControl,
+        SessionCreate, SessionRemove,
     },
 };
 
@@ -286,6 +288,66 @@ impl MediaClient {
         stream.Close().ok();
 
         Ok(data)
+    }
+
+    pub fn control(
+        &self,
+        session: &GlobalSystemMediaTransportControlsSession,
+        control: &SessionControl,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let result = match control {
+            SessionControl::Play => session.TryPlayAsync(),
+            SessionControl::Pause => session.TryPauseAsync(),
+            SessionControl::TogglePlayPause => session.TryTogglePlayPauseAsync(),
+            SessionControl::FastForward => session.TryFastForwardAsync(),
+            SessionControl::Rewind => session.TryRewindAsync(),
+            SessionControl::SkipNext => session.TrySkipNextAsync(),
+            SessionControl::SkipPrevious => session.TrySkipPreviousAsync(),
+        };
+        return Ok(result?.get()?);
+    }
+
+    pub fn control_session(
+        &self,
+        source: String,
+        control: SessionControl,
+    ) -> Result<(), WinRTError> {
+        let sessions = match self.session_manager.GetSessions() {
+            Ok(s) => s,
+            Err(_) => {
+                return Err(WinRTError {
+                    message: "Failed to get current sessions.".to_string(),
+                });
+            }
+        };
+        for session in sessions {
+            let Ok(src) = session.SourceAppUserModelId() else {
+                continue;
+            };
+            if src.to_string() == source {
+                match self.control(&session, &control) {
+                    Ok(res) => match res {
+                        true => return Ok(()),
+                        false => {
+                            return Err(WinRTError {
+                                message: format!(
+                                    "Failed to control {source} session: {:?}",
+                                    control
+                                ),
+                            })
+                        }
+                    },
+                    Err(_) => {
+                        return Err(WinRTError {
+                            message: format!("Failed to control {source} session: {:?}", control),
+                        })
+                    }
+                }
+            }
+        }
+        Err(WinRTError {
+            message: "Failed to find session.".to_string(),
+        })
     }
 
     /*

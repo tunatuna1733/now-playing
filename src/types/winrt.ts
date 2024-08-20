@@ -69,3 +69,16 @@ export type SessionUpdate = BaseSessionInfo & {
 export type SessionRemove = BaseSessionInfo;
 
 export type ActiveSessionChange = BaseSessionInfo;
+
+export type SessionControl =
+  | 'Play'
+  | 'Pause'
+  | 'TogglePlayPause'
+  | 'FastForward'
+  | 'Rewind'
+  | 'SkipNext'
+  | 'SkipPrevious';
+
+export type WinRTError = {
+  message: string;
+};

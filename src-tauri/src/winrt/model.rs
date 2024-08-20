@@ -49,3 +49,14 @@ pub struct ActiveSessionChange {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct ActiveSessionRemove;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum SessionControl {
+    Play,
+    Pause,
+    TogglePlayPause,
+    FastForward,
+    Rewind,
+    SkipNext,
+    SkipPrevious,
+}

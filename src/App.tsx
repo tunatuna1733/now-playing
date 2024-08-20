@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react';
 import reactLogo from './assets/react.svg';
 import { invoke } from '@tauri-apps/api/core';
 import './App.css';
-import { ActiveSessionChange, Session, SessionCreate, SessionRemove, SessionUpdate } from './types/winrt';
+import {
+  ActiveSessionChange,
+  Session,
+  SessionControl,
+  SessionCreate,
+  SessionRemove,
+  SessionUpdate,
+  WinRTError,
+} from './types/winrt';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { debugPrint } from './utils/debug';
 
@@ -11,6 +19,17 @@ function App() {
 
   const getCurrentSessions = async () => {
     setSessions(await invoke('get_current_sessions'));
+  };
+
+  const controlSession = (source: string, control: SessionControl) => {
+    invoke('control_session', { source, control })
+      .then(() => {
+        debugPrint('Session control succeeded');
+      })
+      .catch((e) => {
+        const err = e as WinRTError;
+        debugPrint(`Failed to control: ${err.message}, ${source}:${control}`);
+      });
   };
 
   useEffect(() => {
@@ -124,6 +143,8 @@ function App() {
             <p> {s.session?.media?.title}</p>
             <p> {s.session?.media?.artist}</p>
             <img src={URL.createObjectURL(new Blob([new Uint8Array(s.image || [])], { type: 'image/png' }))} />
+            <button onClick={() => controlSession(s.source, 'Pause')}>Pause</button>
+            <button onClick={() => controlSession(s.source, 'Play')}>Play</button>
           </div>
         ))}
       </div>

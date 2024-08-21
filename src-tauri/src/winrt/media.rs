@@ -182,7 +182,6 @@ impl MediaClient {
             }
         };
         let mut current_sessions = Vec::<CurrentSession>::new();
-        let mut id = 0;
         for session in sessions {
             let info = match session.TryGetMediaPropertiesAsync() {
                 Ok(a) => match a.get() {
@@ -267,10 +266,8 @@ impl MediaClient {
                 source: source.to_string(),
                 session,
                 image: thumbnail,
-                session_id: id.clone(),
             };
             current_sessions.push(data);
-            id += 1;
         }
         Ok(current_sessions)
     }

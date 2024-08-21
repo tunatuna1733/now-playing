@@ -16,7 +16,6 @@ pub struct CurrentSession {
     pub source: String,
     pub session: SessionModel,
     pub image: Option<Vec<u8>>,
-    pub session_id: i32,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]

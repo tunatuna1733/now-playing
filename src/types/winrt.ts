@@ -6,8 +6,19 @@ export type NowPlaying = {
   guid: string;
 };
 
-export type Session = BaseSessionInfo & {
+export type Timeline = {
   source: string;
+  positionLoop: NodeJS.Timeout;
+  time: {
+    start: number;
+    length: number;
+    position: number;
+  };
+};
+
+export type Session = {
+  source: string;
+  sessionId?: string;
   session?: SessionModel;
   image?: Iterable<number>;
 };

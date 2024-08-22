@@ -16,9 +16,8 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.2.0",
-    "lucide-react": "^0.428.0",
+    "lucide-react": "^0.429.0",
     "react": "^18.2.0",
-    "react-detectable-overflow": "^0.8.0",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7"

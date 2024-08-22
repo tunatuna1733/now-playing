@@ -8,12 +8,9 @@ export type NowPlaying = {
 
 export type Timeline = {
   source: string;
-  positionLoop: NodeJS.Timeout;
-  time: {
-    start: number;
-    length: number;
-    position: number;
-  };
+  positionLoop?: NodeJS.Timeout;
+  length: number;
+  position: number;
 };
 
 export type Session = {
@@ -21,6 +18,7 @@ export type Session = {
   sessionId?: string;
   session?: SessionModel;
   image?: Iterable<number>;
+  imageUrl?: string;
 };
 
 export type BaseSessionInfo = {

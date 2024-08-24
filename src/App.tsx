@@ -8,8 +8,6 @@ import {
   SessionCreate,
   SessionRemove,
   SessionUpdate,
-  Timeline,
-  TimelineModel,
   WinRTError,
 } from './types/winrt';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -24,11 +22,10 @@ import {
 } from './components/ui/carousel';
 import AudioProgressBar from './components/AudioProgressBar';
 import { Button } from './components/ui/button';
-import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
+import { Equal, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
   const controlSession = (source: string, control: SessionControl) => {
@@ -42,66 +39,6 @@ function App() {
       });
   };
 
-  const addTime = (source: string, time: number) => {
-    setTimelines((prev) => {
-      const exist = prev.find((t) => t.source === source);
-      if (!exist) return prev;
-      const filtered = prev.filter((t) => t.source !== source);
-      exist.position += time / 1000;
-      return [...filtered, exist];
-    });
-  };
-
-  const resumeTimeline = (timeline: TimelineModel, source: string) => {
-    setTimelines((prev) => {
-      const exist = prev.find((t) => t.source === source);
-      const filtered = prev.filter((t) => t.source !== source);
-      const length = timeline.end / 10000000;
-      const position = timeline.position / 10000000;
-      if (!exist) {
-        const interval = setInterval(() => {
-          addTime(source, 250);
-        }, 250);
-        const newTimeline: Timeline = {
-          length,
-          position,
-          source,
-          positionLoop: interval,
-        };
-        return [...filtered, newTimeline];
-      }
-      clearInterval(exist.positionLoop);
-      const interval = setInterval(() => {
-        addTime(source, 250);
-      }, 250);
-      exist.length = length;
-      exist.position = position;
-      exist.positionLoop = interval;
-      return [...filtered, exist];
-    });
-  };
-
-  const pauseTimeline = (timeline: TimelineModel, source: string) => {
-    setTimelines((prev) => {
-      const exist = prev.find((t) => t.source === source);
-      const filtered = prev.filter((t) => t.source !== source);
-      const length = timeline.end / 10000000;
-      const position = timeline.position / 10000000;
-      if (!exist) {
-        const newTimeline: Timeline = {
-          length,
-          position,
-          source,
-        };
-        return [...filtered, newTimeline];
-      }
-      if (exist.positionLoop) clearInterval(exist.positionLoop);
-      exist.length = length;
-      exist.position = position;
-      return [...filtered, exist];
-    });
-  };
-
   useEffect(() => {
     invoke<Session[]>('get_current_sessions').then((s) => {
       const ss = s.sort((a, b) => {
@@ -109,14 +46,6 @@ function App() {
         else return -1;
       });
       ss.forEach((session) => {
-        if (session.session && session.session.timeline) {
-          const timeline = session.session.timeline;
-          if (session.session.playback?.status === 'Playing') {
-            resumeTimeline(timeline, session.source);
-          } else if (session.session.playback?.status === 'Paused') {
-            pauseTimeline(timeline, session.source);
-          }
-        }
         if (session.image) {
           session.imageUrl = URL.createObjectURL(new Blob([new Uint8Array(session.image)], { type: 'image/png' }));
         }
@@ -156,14 +85,6 @@ function App() {
             return newSessions;
           }
         });
-        if (e.payload.sessionModel.timeline) {
-          const timeline = e.payload.sessionModel.timeline;
-          if (e.payload.sessionModel.playback?.status === 'Playing') {
-            resumeTimeline(timeline, e.payload.source);
-          } else if (e.payload.sessionModel.playback?.status === 'Paused') {
-            pauseTimeline(timeline, e.payload.source);
-          }
-        }
       });
       unlistenFuncs.push(unlistenSessionUpdateListener);
 
@@ -193,9 +114,6 @@ function App() {
     return () => {
       unlistenFuncs.forEach((f) => {
         f();
-      });
-      timelines.forEach((t) => {
-        if (t.positionLoop) clearInterval(t.positionLoop);
       });
       sessions.forEach((s) => {
         if (s.imageUrl) URL.revokeObjectURL(s.imageUrl);
@@ -244,7 +162,12 @@ function App() {
 
   return (
     <div className={`w-[${window.innerWidth}px] h-[${window.innerHeight}px]`}>
-      <Carousel className="mt-3 mx-10 h-full" setApi={setCarouselApi} opts={{ loop: true }}>
+      <div data-tauri-drag-region className="h-[20px] w-full flex justify-between">
+        <div className="w-[20px]"></div>
+        <Equal className="justify-self-center" size={20} />
+        <X className="" size={20} />
+      </div>
+      <Carousel className="mt-7 mx-10" setApi={setCarouselApi} opts={{ loop: true }}>
         <CarouselContent>
           {sessions.map((s, i) => (
             <CarouselItem key={i}>
@@ -253,7 +176,7 @@ function App() {
               </div>
               <p className="text-gray-400">{s.session?.media?.artist || ''}</p>
               <OverflowingText text={s.session?.media?.title || ''} />
-              <AudioProgressBar timeline={timelines.find((t) => t.source === s.source)} />
+              <AudioProgressBar rawTimeline={s.session?.timeline} playbackStatus={s.session?.playback?.status} />
               <div className="w-full flex justify-between">
                 <Button variant="ghost" size="icon" onClick={() => controlSession(s.source, 'SkipPrevious')}>
                   <SkipBack />

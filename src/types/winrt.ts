@@ -7,10 +7,9 @@ export type NowPlaying = {
 };
 
 export type Timeline = {
-  source: string;
   positionLoop?: NodeJS.Timeout;
   length: number;
-  position: number;
+  positionMs: number;
 };
 
 export type Session = {

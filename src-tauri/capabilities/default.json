@@ -11,6 +11,8 @@
         "core:window:allow-start-dragging",
         "core:window:allow-show",
         "core:window:allow-hide",
-        "core:window:allow-is-resizable"
+        "core:window:allow-is-resizable",
+        "core:window:allow-set-always-on-top",
+        "process:default"
     ]
 }

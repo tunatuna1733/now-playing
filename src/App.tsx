@@ -23,10 +23,15 @@ import {
 import AudioProgressBar from './components/AudioProgressBar';
 import { Button } from './components/ui/button';
 import { Equal, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
+import { exit } from '@tauri-apps/plugin-process';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { Switch } from './components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+  const [onTop, setOnTop] = useState(false);
 
   const controlSession = (source: string, control: SessionControl) => {
     invoke('control_session', { source, control })
@@ -37,6 +42,20 @@ function App() {
         const err = e as WinRTError;
         debugPrint(`Failed to control: ${err.message}, ${source}:${control}`);
       });
+  };
+
+  const setAlwaysOnTop = async (alwaysOnTop: boolean) => {
+    const currentWindow = getCurrentWindow();
+    try {
+      await currentWindow.setAlwaysOnTop(alwaysOnTop);
+      setOnTop(alwaysOnTop);
+    } catch {
+      console.error('Failed to set window always on top.');
+    }
+  };
+
+  const closeApp = () => {
+    exit(1);
   };
 
   useEffect(() => {
@@ -53,6 +72,7 @@ function App() {
       console.log(ss);
       setSessions(ss);
     });
+
     const unlistenFuncs: UnlistenFn[] = [];
     const initListeners = async () => {
       const unlistenSessionCreateListener = await listen<SessionCreate>('session_create', (e) => {
@@ -163,18 +183,28 @@ function App() {
   return (
     <div className={`w-[${window.innerWidth}px] h-[${window.innerHeight}px]`}>
       <div data-tauri-drag-region className="h-[20px] w-full flex justify-between">
-        <div className="w-[20px]"></div>
-        <Equal className="justify-self-center" size={20} />
-        <X className="" size={20} />
+        <div data-tauri-drag-region className="w-[20px]"></div>
+        <Equal data-tauri-drag-region className="justify-self-center" size={20} />
+        <X className="hover:bg-gray-500" size={20} onClick={closeApp} />
       </div>
-      <Carousel className="mt-7 mx-10" setApi={setCarouselApi} opts={{ loop: true }}>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger className="float-end">
+            <Switch className="pr-[20px]" onCheckedChange={setAlwaysOnTop} />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Set Always on Top</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <Carousel className="mt-[20px] mx-10" setApi={setCarouselApi} opts={{ loop: true }}>
         <CarouselContent>
           {sessions.map((s, i) => (
             <CarouselItem key={i}>
               <div className="h-2/5 flex">
                 <img className="mx-auto h-full object-contain" src={s.imageUrl} />
               </div>
-              <p className="text-gray-400">{s.session?.media?.artist || ''}</p>
+              <p className="text-gray-400 text-sm">{s.session?.media?.artist || ''}</p>
               <OverflowingText text={s.session?.media?.title || ''} />
               <AudioProgressBar rawTimeline={s.session?.timeline} playbackStatus={s.session?.playback?.status} />
               <div className="w-full flex justify-between">

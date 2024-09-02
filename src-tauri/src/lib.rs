@@ -1,5 +1,13 @@
+use std::sync::{Arc, Mutex as SyncMutex};
+
 use serde::Serialize;
-use tauri::{async_runtime::Mutex, AppHandle, Emitter, Manager, State};
+use tauri::{
+    async_runtime::Mutex, AppHandle, Emitter, Manager, PhysicalSize, Size, State, WindowEvent,
+};
+use windows::Win32::{
+    Foundation::RECT,
+    UI::WindowsAndMessaging::{SystemParametersInfoA, SPI_GETWORKAREA},
+};
 use winrt::{
     error::WinRTError,
     media::MediaClient,
@@ -32,8 +40,24 @@ pub fn emit_event<S: Serialize + Clone>(event_name: &str, payload: S, handle: &A
     handle.emit(event_name, payload).unwrap();
 }
 
+fn get_workspace_height() -> Result<i32, Box<dyn std::error::Error>> {
+    let mut rect: RECT = Default::default();
+    unsafe {
+        SystemParametersInfoA(
+            SPI_GETWORKAREA,
+            0,
+            Some(&mut rect as *mut _ as _),
+            Default::default(),
+        )
+        .unwrap();
+    }
+    Ok(rect.bottom)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let workspace_height = get_workspace_height().unwrap();
+    let is_mini = Arc::new(SyncMutex::new(false));
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
@@ -41,6 +65,40 @@ pub fn run() {
             get_current_sessions,
             control_session
         ])
+        .on_window_event(move |window, event| match event {
+            WindowEvent::Moved(pos) => {
+                let mini_arc = Arc::clone(&is_mini);
+                let mut mini = mini_arc.lock().unwrap();
+                if pos.y > workspace_height - 50 {
+                    if *mini == false {
+                        println!("changed to mini mode");
+                        window.set_always_on_top(true).unwrap();
+                        window
+                            .set_size(Size::Physical(PhysicalSize {
+                                width: 500,
+                                height: 50,
+                            }))
+                            .unwrap();
+                        window.emit("mini_mode", true).unwrap();
+                        *mini = true;
+                    }
+                } else {
+                    if *mini == true {
+                        println!("changed to normal mode");
+                        window.set_always_on_top(false).unwrap();
+                        window
+                            .set_size(Size::Physical(PhysicalSize {
+                                width: 300,
+                                height: 300,
+                            }))
+                            .unwrap();
+                        window.emit("mini_mode", false).unwrap();
+                        *mini = false;
+                    }
+                }
+            }
+            _ => {}
+        })
         .setup(|app| {
             let app_handle = app.handle();
             let media_client = MediaClient::new().unwrap();

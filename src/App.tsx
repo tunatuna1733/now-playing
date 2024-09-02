@@ -12,26 +12,12 @@ import {
 } from './types/winrt';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { debugPrint } from './utils/debug';
-import {
-  Carousel,
-  CarouselApi,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from './components/ui/carousel';
-import AudioProgressBar from './components/AudioProgressBar';
-import { Button } from './components/ui/button';
-import { Equal, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
-import { exit } from '@tauri-apps/plugin-process';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Switch } from './components/ui/switch';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
+import NormalMode from './components/NormalMode';
+import MiniMode from './components/MiniMode';
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [carouselApi, setCarouselApi] = useState<CarouselApi>();
-  const [onTop, setOnTop] = useState(false);
+  const [isMini, setIsMini] = useState(false);
 
   const controlSession = (source: string, control: SessionControl) => {
     invoke('control_session', { source, control })
@@ -44,21 +30,7 @@ function App() {
       });
   };
 
-  const setAlwaysOnTop = async (alwaysOnTop: boolean) => {
-    const currentWindow = getCurrentWindow();
-    try {
-      await currentWindow.setAlwaysOnTop(alwaysOnTop);
-      setOnTop(alwaysOnTop);
-    } catch {
-      console.error('Failed to set window always on top.');
-    }
-  };
-
-  const closeApp = () => {
-    exit(1);
-  };
-
-  useEffect(() => {
+  const initSessions = () => {
     invoke<Session[]>('get_current_sessions').then((s) => {
       const ss = s.sort((a, b) => {
         if (a.source > b.source) return 1;
@@ -72,6 +44,10 @@ function App() {
       console.log(ss);
       setSessions(ss);
     });
+  };
+
+  useEffect(() => {
+    initSessions();
 
     const unlistenFuncs: UnlistenFn[] = [];
     const initListeners = async () => {
@@ -94,6 +70,7 @@ function App() {
             // update info
             if (e.payload.image) {
               exist.image = e.payload.image;
+              if (exist.imageUrl) URL.revokeObjectURL(exist.imageUrl);
               exist.imageUrl = URL.createObjectURL(new Blob([new Uint8Array(e.payload.image)], { type: 'image/png' }));
             }
             exist.session = e.payload.sessionModel;
@@ -128,6 +105,17 @@ function App() {
         setSessions([]);
       });
       unlistenFuncs.push(unlistenCurrentSessionRemoveListener);
+
+      const unlistenMiniListener = await listen<boolean>('mini_mode', (e) => {
+        if (e.payload === true) {
+          // changed to mini mode
+          setIsMini(true);
+        } else {
+          setIsMini(false);
+        }
+        initSessions();
+      });
+      unlistenFuncs.push(unlistenMiniListener);
     };
 
     initListeners();
@@ -141,89 +129,13 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!carouselApi) return;
-  }, [carouselApi]);
-
-  const OverflowingText = ({ text }: { text: string }) => {
-    const [hover, setHover] = useState(false);
-    const [overflow, setOverflow] = useState(false);
-    const containerId = `overflowing-text-container-${text}`;
-    const pId = `overflowing-text-text-${text}`;
-
-    useEffect(() => {
-      const containerWidth = document.getElementById(containerId)?.clientWidth;
-      const pWidth = document.getElementById(pId)?.clientWidth;
-      if (!containerWidth || !pWidth) return;
-      if (containerWidth < pWidth) {
-        setOverflow(true);
-      }
-    }, []);
-
-    return (
-      <div
-        className="w-full whitespace-nowrap overflow-hidden box-border relative"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        id={containerId}
-      >
-        {overflow ? (
-          <p className={`inline-block relative font-semibold text-lg${hover ? ' animate-text-move' : ''}`} id={pId}>
-            {text}
-          </p>
-        ) : (
-          <p className={'inline-block relative font-semibold text-lg'} id={pId}>
-            {text}
-          </p>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className={`w-[${window.innerWidth}px] h-[${window.innerHeight}px]`}>
-      <div data-tauri-drag-region className="h-[20px] w-full flex justify-between">
-        <div data-tauri-drag-region className="w-[20px]"></div>
-        <Equal data-tauri-drag-region className="justify-self-center" size={20} />
-        <X className="hover:bg-gray-500" size={20} onClick={closeApp} />
-      </div>
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger className="float-end">
-            <Switch className="pr-[20px]" onCheckedChange={setAlwaysOnTop} />
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Set Always on Top</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      <Carousel className="mt-[20px] mx-10" setApi={setCarouselApi} opts={{ loop: true }}>
-        <CarouselContent>
-          {sessions.map((s, i) => (
-            <CarouselItem key={i}>
-              <div className="h-2/5 flex">
-                <img className="mx-auto h-full object-contain" src={s.imageUrl} />
-              </div>
-              <p className="text-gray-400 text-sm">{s.session?.media?.artist || ''}</p>
-              <OverflowingText text={s.session?.media?.title || ''} />
-              <AudioProgressBar rawTimeline={s.session?.timeline} playbackStatus={s.session?.playback?.status} />
-              <div className="w-full flex justify-between">
-                <Button variant="ghost" size="icon" onClick={() => controlSession(s.source, 'SkipPrevious')}>
-                  <SkipBack />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => controlSession(s.source, 'TogglePlayPause')}>
-                  {s.session?.playback?.status === 'Playing' ? <Pause /> : <Play />}
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => controlSession(s.source, 'SkipNext')}>
-                  <SkipForward />
-                </Button>
-              </div>
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-        <CarouselPrevious variant={'ghost'} className="ml-4 top-1/3" />
-        <CarouselNext variant={'ghost'} className="mr-4 top-1/3" />
-      </Carousel>
+      {isMini ? (
+        <MiniMode sessions={sessions} controlSession={controlSession} />
+      ) : (
+        <NormalMode sessions={sessions} controlSession={controlSession} />
+      )}
     </div>
   );
 }
